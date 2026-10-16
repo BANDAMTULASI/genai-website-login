@@ -32,7 +32,11 @@ export function ChatView({ userName, initialMessages, initialRemaining }: Props)
   const { messages, sendMessage, status, error, clearError } = useChat({
     messages: initialMessages,
     transport: new DefaultChatTransport({ api: '/api/chat' }),
-    onFinish: () => setRemaining((r) => Math.max(0, r - 1)),
+    onFinish: ({ isError, isAbort, isDisconnect }) => {
+      if (!isError && !isAbort && !isDisconnect) {
+        setRemaining((r) => Math.max(0, r - 1))
+      }
+    },
   })
 
   const busy = status === 'submitted' || status === 'streaming'

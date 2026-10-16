@@ -9,7 +9,12 @@ import { headers } from 'next/headers'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { chatMessages } from '@/lib/db/schema'
-import { consumeMessage, DAILY_FREE_LIMIT, TELEGRAM_URL } from '@/lib/usage'
+import {
+  consumeMessage,
+  DAILY_FREE_LIMIT,
+  refundMessage,
+  TELEGRAM_URL,
+} from '@/lib/usage'
 
 export const maxDuration = 60
 
@@ -67,10 +72,21 @@ export async function POST(req: Request) {
     .slice(-CONTEXT_MESSAGES)
     .filter((m) => m.role === 'user' || m.role === 'assistant')
 
+  let refunded = false
+  const refundOnce = async () => {
+    if (refunded) return
+    refunded = true
+    await refundMessage(userId)
+  }
+
   const result = streamText({
     model: 'openai/gpt-5.4-mini',
     instructions: INSTRUCTIONS,
     messages: await convertToModelMessages(context),
+    onError: async ({ error }) => {
+      console.error('Tulasi AI generation failed:', error)
+      await refundOnce()
+    },
     onFinish: async ({ text }) => {
       if (text.trim()) {
         await db
@@ -81,6 +97,10 @@ export async function POST(req: Request) {
   })
 
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+    stream: toUIMessageStream({
+      stream: result.stream,
+      onError: () =>
+        'Tulasi AI could not reply right now. This message was not counted against your daily limit. Please try again shortly.',
+    }),
   })
 }

@@ -32,3 +32,11 @@ export async function consumeMessage(userId: string) {
   if (rows.length === 0) return null
   return DAILY_FREE_LIMIT - rows[0].count
 }
+
+/** Gives back a message when the AI failed to reply, so users are not charged for errors. */
+export async function refundMessage(userId: string) {
+  await db
+    .update(dailyUsage)
+    .set({ count: sql`greatest(${dailyUsage.count} - 1, 0)` })
+    .where(and(eq(dailyUsage.userId, userId), eq(dailyUsage.day, today())))
+}
