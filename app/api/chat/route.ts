@@ -96,11 +96,6 @@ export async function POST(req: Request) {
     },
   })
 
-  return createUIMessageStreamResponse({
-    stream: toUIMessageStream({
-      stream: result.stream,
-      onError: () =>
-        'Tulasi AI could not reply right now. This message was not counted against your daily limit. Please try again shortly.',
-    }),
+  
   })
 }
