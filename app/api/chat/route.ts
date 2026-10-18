@@ -96,7 +96,7 @@ export async function POST(req: Request) {
   try {
     const result = streamText({
       model,
-      instructions: INSTRUCTIONS,
+      system: INSTRUCTIONS,
       messages: await 
         convertToModelMessages(context),
       
