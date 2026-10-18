@@ -1,4 +1,5 @@
-import {
+import { google } from '@ai-sdk/google'
+  import {
   convertToModelMessages,
   createUIMessageStreamResponse,
   streamText,
@@ -88,7 +89,9 @@ export async function POST(req: Request) {
   }
 
   // Model name can be overridden via env var, default to Gemini flash model
-  const model = process.env.GEMINI_MODEL || 'google/gemini-2.0-flash'
+  const model = google(
+  process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+)
 
   try {
     const result = streamText({
