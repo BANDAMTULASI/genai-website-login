@@ -24,7 +24,7 @@ const CONTEXT_MESSAGES = 20
 const INSTRUCTIONS = `You are Tulasi AI, a friendly assistant that answers questions, writes code, and creates clear study notes on any topic.
 - Use Markdown. Put code in fenced code blocks with a language tag.
 - For notes, use headings and bullet points and keep them well organised.
-- This user is on the Free plan (${DAILY_FREE_LIMIT} messages per day). Premium (Rs 999 for 30 days, unlimited messages) can only be bought in the Telegram bot ${TELEGRAM_URL}. Mention this only if the user asks about plans or limits.`
+- This user is on the Free plan (${DAILY_FREE_LIMIT} messages per day). Premium (Rs 999 for 30 days, unlimited messages) can only be bought in the Telegram bot ${TELEGRAM_URL}. Mention this only if needed.`
 
 function textOf(message: UIMessage) {
   return message.parts
@@ -34,17 +34,20 @@ function textOf(message: UIMessage) {
 }
 
 export async function POST(req: Request) {
+  // Basic auth/session checks
   const session = await getSession(await headers())
   if (!session?.user) {
     return new Response('Please sign in to chat.', { status: 401 })
   }
   const userId = session.user.id
 
+  // Parse body
   let messages: UIMessage[]
   try {
     const body = await req.json()
     messages = Array.isArray(body?.messages) ? body.messages : []
-  } catch {
+  } catch (err) {
+    console.error('Invalid request body:', err)
     return new Response('Invalid request.', { status: 400 })
   }
 
@@ -79,23 +82,38 @@ export async function POST(req: Request) {
     await refundMessage(userId)
   }
 
-  const result = streamText({
-    model: 'openai/gpt-5.4-mini',
-    instructions: INSTRUCTIONS,
-    messages: await convertToModelMessages(context),
-    onError: async ({ error }) => {
-      console.error('Tulasi AI generation failed:', error)
-      await refundOnce()
-    },
-    onFinish: async ({ text }) => {
-      if (text.trim()) {
-        await db
-          .insert(chatMessages)
-          .values({ userId, role: 'assistant', content: text })
-      }
-    },
-  })
+  // Ensure developer set the API key
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('GEMINI_API_KEY is not set in environment')
+    return new Response('Server misconfiguration: GEMINI_API_KEY missing', { status: 500 })
+  }
 
-  
-  })
+  // Model name can be overridden via env var, default to Gemini flash model
+  const model = process.env.GEMINI_MODEL || 'google/gemini-2.0-flash'
+
+  try {
+    const result = streamText({
+      model,
+      instructions: INSTRUCTIONS,
+      messages: await convertToModelMessages(context),
+      onError: async ({ error }) => {
+        console.error('Tulasi AI generation failed:', error)
+        await refundOnce()
+      },
+      onFinish: async ({ text }) => {
+        if (text?.trim()) {
+          await db
+            .insert(chatMessages)
+            .values({ userId, role: 'assistant', content: text })
+        }
+      },
+    })
+
+    // Return the streaming response expected by @ai-sdk/react DefaultChatTransport
+    return createUIMessageStreamResponse(toUIMessageStream(result))
+  } catch (err) {
+    console.error('Generation error:', err)
+    await refundOnce()
+    return new Response('Generation failed', { status: 500 })
+  }
 }
