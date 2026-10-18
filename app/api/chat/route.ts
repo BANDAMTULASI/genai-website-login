@@ -11,8 +11,8 @@ import { db } from '@/lib/db'
 import { chatMessages } from '@/lib/db/schema'
 import {
   consumeMessage,
+  getRemaining,
   DAILY_FREE_LIMIT,
-  refundMessage,
   TELEGRAM_URL,
 } from '@/lib/usage'
 
@@ -61,8 +61,9 @@ export async function POST(req: Request) {
     )
   }
 
-  const remaining = await consumeMessage(userId)
-  if (remaining === null) {
+  // Check remaining BEFORE generation (do not increment yet)
+  const remainingBefore = await getRemaining(userId)
+  if (remainingBefore <= 0) {
     return new Response(
       `You have used your ${DAILY_FREE_LIMIT} free messages for today. Come back tomorrow, or get Premium (Rs 999 for 30 days, unlimited messages) in our Telegram bot: ${TELEGRAM_URL}`,
       { status: 429 },
@@ -75,17 +76,15 @@ export async function POST(req: Request) {
     .slice(-CONTEXT_MESSAGES)
     .filter((m) => m.role === 'user' || m.role === 'assistant')
 
-  let refunded = false
-  const refundOnce = async () => {
-    if (refunded) return
-    refunded = true
-    await refundMessage(userId)
+  // Ensure SDK picks up the key: accept GEMINI_API_KEY but also set GOOGLE_API_KEY for provider
+  if (!process.env.GOOGLE_API_KEY && process.env.GEMINI_API_KEY) {
+    process.env.GOOGLE_API_KEY = process.env.GEMINI_API_KEY
+    console.info('Using GEMINI_API_KEY as GOOGLE_API_KEY for provider')
   }
 
-  // Ensure developer set the API key
-  if (!process.env.GEMINI_API_KEY) {
-    console.error('GEMINI_API_KEY is not set in environment')
-    return new Response('Server misconfiguration: GEMINI_API_KEY missing', { status: 500 })
+  if (!process.env.GOOGLE_API_KEY) {
+    console.error('GEMINI/GOOGLE API key is not set in environment')
+    return new Response('Server misconfiguration: GEMINI/GOOGLE API key missing', { status: 500 })
   }
 
   // Model name can be overridden via env var, default to Gemini flash model
@@ -98,13 +97,24 @@ export async function POST(req: Request) {
       messages: await convertToModelMessages(context),
       onError: async ({ error }) => {
         console.error('Tulasi AI generation failed:', error)
-        await refundOnce()
       },
       onFinish: async ({ text }) => {
-        if (text?.trim()) {
-          await db
-            .insert(chatMessages)
-            .values({ userId, role: 'assistant', content: text })
+        try {
+          if (text?.trim()) {
+            // Only now consume the message (count it) since generation succeeded
+            const rem = await consumeMessage(userId)
+            if (rem === null) {
+              console.warn('consumeMessage returned null (race or limit reached)')
+            }
+
+            await db
+              .insert(chatMessages)
+              .values({ userId, role: 'assistant', content: text })
+          } else {
+            console.info('Generation finished with empty text; not counting message')
+          }
+        } catch (err) {
+          console.error('Error during onFinish handling:', err)
         }
       },
     })
@@ -113,7 +123,6 @@ export async function POST(req: Request) {
     return createUIMessageStreamResponse(toUIMessageStream(result))
   } catch (err) {
     console.error('Generation error:', err)
-    await refundOnce()
     return new Response('Generation failed', { status: 500 })
   }
 }
