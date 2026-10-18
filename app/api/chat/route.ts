@@ -83,7 +83,7 @@ export async function POST(req: Request) {
   }
 
   if (!process.env.GOOGLE_API_KEY) {
-    console.error('GEMINI/GOOGLE API key is not set in environment')
+    console.error('GEMINI/GOOGLE API key is set in environment')
     return new Response('Server misconfiguration: GEMINI/GOOGLE API key missing', { status: 500 })
   }
 
@@ -94,9 +94,7 @@ export async function POST(req: Request) {
     const result = streamText({
       model,
       instructions: INSTRUCTIONS,
-      messages: await convertToModelMessages(context),
-      onError: async ({ error }) => {
-        console.error('Tulasi AI generation failed:', error)
+      messages: await convertToModelMessages(context)
       },
       onFinish: async ({ text }) => {
         try {
