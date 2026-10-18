@@ -100,6 +100,10 @@ export async function POST(req: Request) {
       messages: await 
         convertToModelMessages(context),
       
+      onError({ error }) {
+    console.error("[Tulasi AI] Gemini generation error:", error);
+  },
+      
       onFinish: async ({ text }) => {
         try {
           if (text?.trim()) {
