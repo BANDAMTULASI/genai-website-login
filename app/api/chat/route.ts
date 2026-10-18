@@ -97,8 +97,9 @@ export async function POST(req: Request) {
     const result = streamText({
       model,
       instructions: INSTRUCTIONS,
-      messages: await convertToModelMessages(context)
-      },
+      messages: await 
+        convertToModelMessages(context),
+      
       onFinish: async ({ text }) => {
         try {
           if (text?.trim()) {
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
             if (rem === null) {
               console.warn('consumeMessage returned null (race or limit reached)')
             }
+          
 
             await db
               .insert(chatMessages)
